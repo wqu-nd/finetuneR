@@ -78,7 +78,6 @@ my_data <- data.frame(
   left_join(label_map, by = "category")
 
 
-
 ```
 
 ### 4. Run the Experiment
@@ -124,7 +123,6 @@ for (i in 1:n_runs) {
 }
 
 
-
 ```
 
 ### 5. Summarize Results
@@ -137,7 +135,6 @@ summarize_run_results(
   task_type = "classification",
   label_map = label_map
 )
-
 
 
 ```
