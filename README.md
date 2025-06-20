@@ -14,7 +14,7 @@ finetuneR provides a streamlined, high-level workflow for fine-tuning pre-traine
 
 **Comprehensive Reporting:** Generate detailed reports from multiple training runs, including training history, per-class metrics, and an aggregated summary with mean and standard deviation. \## Installation
 
-You can install the development version of finetuneR from [GitHub](https://github.com/) with:
+You can install the development version of finetuneR from GitHub with:
 
 ``` r
 # install.packages("pak")
