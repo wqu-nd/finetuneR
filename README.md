@@ -43,10 +43,21 @@ library(reticulate)
 This step only needs to be run once per machine or project. It prepares the dedicated Python environment that the package will use.
 
 ``` r
-# Tell reticulate which Python environment to use
-use_miniconda("r-reticulate", required = TRUE)
+# --- Tell reticulate which Python environment to use ---
 
-# Run the setup function to install dependencies and set seeds
+# On Windows or Intel-based Macs, this is often sufficient:
+reticulate::use_miniconda("r-reticulate", required = TRUE)
+
+# On Apple Silicon Macs (M1/M2/M3), it is highly recommended to use
+# a native arm64 Python distribution like miniforge. First, install
+# miniforge, then point reticulate to it like this:
+# use_condaenv(
+#   condaenv = "base",
+#   conda    = "/path/to/your/miniforge3/bin/conda",
+#   required = TRUE
+# )
+
+# --- Run the setup function to install dependencies and set seeds ---
 setup_finetuner_env(global_seed = 123)
 ```
 
@@ -76,8 +87,6 @@ my_data <- data.frame(
   category = sample(label_map$category, 1000, replace = TRUE)
 ) %>%
   left_join(label_map, by = "category")
-
-
 ```
 
 ### 4. Run the Experiment
@@ -121,8 +130,6 @@ for (i in 1:n_runs) {
     num_labels = NUM_LABELS
   )
 }
-
-
 ```
 
 ### 5. Summarize Results
@@ -135,8 +142,6 @@ summarize_run_results(
   task_type = "classification",
   label_map = label_map
 )
-
-
 ```
 
 This will print the detailed training history and test set evaluation for each run, followed by a final aggregated table showing the mean and standard deviation of the key metrics across all runs.

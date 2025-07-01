@@ -13,7 +13,7 @@ prepare_finetuning_data(
   test_split_ratio = 0.2,
   val_split_ratio = 0.2,
   max_length = 512L,
-  seed = 42,
+  seed = 11,
   stratified = FALSE
 )
 }
@@ -41,7 +41,8 @@ validation set.}
 for classification tasks to maintain label distribution. Defaults to `FALSE`.}
 }
 \value{
-A list containing the `train`, `validation`, and `test` PyTorch datasets.
+A list containing `datasets` (for the trainer) and `data_splits`
+  (the raw data frames).
 }
 \description{
 This function takes a dataframe, splits it into training, validation,

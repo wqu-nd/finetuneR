@@ -5,6 +5,7 @@
 # the simplified workflow using the new `summarize_run_results` function.
 
 # --- 1. Load Package and Dependencies ---
+#devtools::install_github("wqu-nd/finetuneR")
 library(finetuneR)
 library(dplyr)
 library(reticulate)

@@ -118,7 +118,8 @@ class RDataset(torch.utils.data.Dataset):
 #' @param seed An integer for the random seed for reproducibility of the data split.
 #' @param stratified A logical value. If `TRUE`, performs stratified sampling
 #'   for classification tasks to maintain label distribution. Defaults to `FALSE`.
-#' @return A list containing the `train`, `validation`, and `test` PyTorch datasets.
+#' @return A list containing `datasets` (for the trainer) and `data_splits`
+#'   (the raw data frames).
 #' @export
 prepare_finetuning_data <- function(df,
                                     task_type = "classification",
@@ -128,7 +129,7 @@ prepare_finetuning_data <- function(df,
                                     test_split_ratio = 0.2,
                                     val_split_ratio = 0.2,
                                     max_length = 512L,
-                                    seed = 42,
+                                    seed = 11,
                                     stratified = FALSE) {
 
   # Add check to ensure environment is initialized
@@ -188,10 +189,18 @@ prepare_finetuning_data <- function(df,
   val_py_dataset <- RDataset(val_enc, r_to_py(Y_val))
   test_py_dataset <- RDataset(test_enc, r_to_py(Y_test))
 
+  # Return both the tokenized datasets and the raw data frames
   list(
-    train = train_py_dataset,
-    validation = val_py_dataset,
-    test = test_py_dataset
+    datasets = list(
+      train = train_py_dataset,
+      validation = val_py_dataset,
+      test = test_py_dataset
+    ),
+    data_splits = list(
+      train = train_df,
+      validation = val_df,
+      test = test_df
+    )
   )
 }
 
@@ -201,16 +210,23 @@ prepare_finetuning_data <- function(df,
 
 #' Create User-Friendly Training Arguments
 #'
-#' A helper function to simplify the creation of `TrainingArguments` that uses
-#' argument names consistent with the Python `transformers` library.
+#' A helper function to simplify the creation of `TrainingArguments`.
 #'
 #' @param output_dir Path to the directory where model checkpoints will be saved.
 #' @param num_train_epochs Number of times to iterate over the training dataset.
 #' @param learning_rate The initial learning rate for the AdamW optimizer.
 #' @param per_device_train_batch_size The batch size for training.
 #' @param per_device_eval_batch_size The batch size for validation.
+#' @param warmup_steps Number of steps for the learning rate warmup. Defaults to 0.
+#' @param weight_decay The weight decay to apply (if not zero). Defaults to 0.
 #' @param metric_for_best_model The metric used to identify the best model.
 #'   Defaults to "f1" for classification and "mse" for regression.
+#' @param eval_strategy The evaluation and save strategy to adopt during training.
+#'   Possible values are `"no"`, `"steps"`, `"epoch"`. Defaults to `"epoch"`.
+#' @param logging_strategy The logging strategy to adopt during training.
+#'   Possible values are `"no"`, `"steps"`, `"epoch"`. Defaults to `"epoch"`.
+#' @param show_progress_bar A logical value. If `FALSE`, disables the detailed,
+#'   per-step progress bar. Defaults to `TRUE`.
 #' @param task_type A string to set a default for `metric_for_best_model`.
 #' @param seed A random seed for reproducibility for the training process.
 #' @param ... Other arguments to be passed directly to `transformers$TrainingArguments`.
@@ -221,9 +237,14 @@ create_training_args <- function(output_dir,
                                  learning_rate = 2e-5,
                                  per_device_train_batch_size = 16L,
                                  per_device_eval_batch_size = 32L,
+                                 warmup_steps = 0L,
+                                 weight_decay = 0.01,
                                  metric_for_best_model = NULL,
+                                 eval_strategy = "epoch",
+                                 logging_strategy = "epoch",
+                                 show_progress_bar = TRUE,
                                  task_type = "classification",
-                                 seed = 42,
+                                 seed = 11,
                                  ...) {
 
   check_env_initialized()
@@ -232,19 +253,21 @@ create_training_args <- function(output_dir,
     metric_for_best_model <- ifelse(task_type == "classification", "f1", "mse")
   }
 
-  # Pass arguments directly, using the Python library's names
+  # Pass arguments directly, mapping user-friendly names to Python library's names
   .globals$transformers$TrainingArguments(
     output_dir = output_dir,
     num_train_epochs = as.integer(num_train_epochs),
     learning_rate = learning_rate,
     per_device_train_batch_size = as.integer(per_device_train_batch_size),
     per_device_eval_batch_size = as.integer(per_device_eval_batch_size),
-    eval_strategy = "epoch",
-    save_strategy = "epoch",
+    warmup_steps = as.integer(warmup_steps),
+    weight_decay = weight_decay,
+    evaluation_strategy = eval_strategy,
+    save_strategy = eval_strategy, # Tie save strategy to evaluation strategy
     load_best_model_at_end = TRUE,
     metric_for_best_model = metric_for_best_model,
-    logging_strategy = "epoch",
-    logging_steps = 10L,
+    logging_strategy = logging_strategy,
+    disable_tqdm = !show_progress_bar,
     seed = as.integer(seed),
     ...
   )

@@ -10,9 +10,14 @@ create_training_args(
   learning_rate = 2e-05,
   per_device_train_batch_size = 16L,
   per_device_eval_batch_size = 32L,
+  warmup_steps = 0L,
+  weight_decay = 0.01,
   metric_for_best_model = NULL,
+  eval_strategy = "epoch",
+  logging_strategy = "epoch",
+  show_progress_bar = TRUE,
   task_type = "classification",
-  seed = 42,
+  seed = 11,
   ...
 )
 }
@@ -27,8 +32,21 @@ create_training_args(
 
 \item{per_device_eval_batch_size}{The batch size for validation.}
 
+\item{warmup_steps}{Number of steps for the learning rate warmup. Defaults to 0.}
+
+\item{weight_decay}{The weight decay to apply (if not zero). Defaults to 0.}
+
 \item{metric_for_best_model}{The metric used to identify the best model.
 Defaults to "f1" for classification and "mse" for regression.}
+
+\item{eval_strategy}{The evaluation and save strategy to adopt during training.
+Possible values are `"no"`, `"steps"`, `"epoch"`. Defaults to `"epoch"`.}
+
+\item{logging_strategy}{The logging strategy to adopt during training.
+Possible values are `"no"`, `"steps"`, `"epoch"`. Defaults to `"epoch"`.}
+
+\item{show_progress_bar}{A logical value. If `FALSE`, disables the detailed,
+per-step progress bar. Defaults to `TRUE`.}
 
 \item{task_type}{A string to set a default for `metric_for_best_model`.}
 
@@ -40,6 +58,5 @@ Defaults to "f1" for classification and "mse" for regression.}
 A `TrainingArguments` object.
 }
 \description{
-A helper function to simplify the creation of `TrainingArguments` that uses
-argument names consistent with the Python `transformers` library.
+A helper function to simplify the creation of `TrainingArguments`.
 }
