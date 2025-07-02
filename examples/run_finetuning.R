@@ -1,11 +1,10 @@
 # ==============================================================================
-# EXAMPLE: Fine-tuning a classifier with the `finetuneR` package
+# EXAMPLE: Fine-tuning models with the `finetuneR` package
 # ==============================================================================
-# This example uses the original 15-label classification task and demonstrates
-# the simplified workflow using the new `summarize_run_results` function.
+# This example script demonstrates how to use the package for both a
+# classification task and a regression task.
 
 # --- 1. Load Package and Dependencies ---
-#devtools::install_github("wqu-nd/finetuneR")
 library(finetuneR)
 library(dplyr)
 library(reticulate)
@@ -13,13 +12,14 @@ library(purrr)
 
 # --- 2. Setup Python Environment ---
 reticulate::use_miniconda("r-reticulate", required = TRUE)
-
-#setup
 setup_finetuner_env(global_seed = 123)
 
 
-# --- 3. Load and Prepare Data ---
-# Use the original 15-label mapping
+# ==============================================================================
+# PART A: TEXT CLASSIFICATION EXAMPLE
+# ==============================================================================
+
+# --- 3A. Load and Prepare Classification Data ---
 label_map <- data.frame(
   category = c(
     "Monitoring environmental impact", "Preventing pollution",
@@ -35,69 +35,111 @@ label_map <- data.frame(
 )
 
 # Create dummy data that mimics the structure of the original dataset
-n_samples <- 1000
-set.seed(11) # R-level seed for creating the data
+n_samples_class <- 1000
+set.seed(11)
 my_data <- data.frame(
-  text = replicate(n_samples, paste(sample(letters, 50, replace = TRUE), collapse = "")),
-  category = sample(label_map$category, n_samples, replace = TRUE)
+  text = replicate(n_samples_class, paste(sample(letters, 50, replace = TRUE), collapse = "")),
+  category = sample(label_map$category, n_samples_class, replace = TRUE)
 ) %>%
   left_join(label_map, by = "category")
 
-cat("--- Data Preview ---\n")
-print(head(my_data))
-cat("\nNumber of labels:", n_distinct(my_data$label), "\n")
-
-
-# --- 4. Set Model and Training Parameters ---
-MODEL_NAME <- "distilbert-base-uncased"
+# --- 4A. Set Model and Training Parameters ---
+MODEL_NAME_CLASS <- "distilbert-base-uncased"
 NUM_LABELS <- n_distinct(my_data$label)
-OUTPUT_DIR <- "./finetuneR-classification-results"
+OUTPUT_DIR_CLASS <- "./finetuneR-classification-results"
 
-
-# --- 5. Run Training with Multiple Seeds ---
-all_run_results <- list()
-n_runs <- 3 # Use 3 runs for a quicker example
+# --- 5A. Run Training with Multiple Seeds ---
+all_run_results_class <- list()
+n_runs <- 3
 
 for (i in 1:n_runs) {
   run_seed <- 11 * i
-  cat(paste0("\nExecuting Run ", i, "/", n_runs, " (Seed: ", run_seed, ")..."))
+  cat(paste0("\nExecuting Classification Run ", i, "/", n_runs, " (Seed: ", run_seed, ")..."))
 
-  # a. Prepare data and training arguments for the run
-  datasets <- prepare_finetuning_data(
+  data_prep_output <- prepare_finetuning_data(
     df = my_data,
     task_type = "classification",
-    model_name = MODEL_NAME,
+    model_name = MODEL_NAME_CLASS,
     seed = run_seed
   )
 
   training_args <- create_training_args(
-    output_dir = file.path(OUTPUT_DIR, paste0("run_", i)),
+    output_dir = file.path(OUTPUT_DIR_CLASS, paste0("run_", i)),
     num_train_epochs = 10,
     per_device_train_batch_size = 32,
     per_device_eval_batch_size = 64,
-    learning_rate = 5e-5,
-    task_type = "classification",
-    metric_for_best_model = "precision",
+    weight_decay = 0.01,
+    learning_rate = 1e-5,
     seed = run_seed
   )
 
-  # b. Run the fine-tuning process and store the entire result object
-  all_run_results[[paste0("run_", i)]] <- finetune_model(
-    datasets = datasets,
+  all_run_results_class[[paste0("run_", i)]] <- finetune_model(
+    datasets = data_prep_output,
     task_type = "classification",
-    model_name = MODEL_NAME,
+    model_name = MODEL_NAME_CLASS,
     training_args = training_args,
     num_labels = NUM_LABELS
   )
 }
+cat("\n\nAll classification runs complete.\n")
 
-
-
-# --- 6. Generate Comprehensive Final Report ---
+# --- 6A. Generate Classification Report ---
 summarize_run_results(
-  all_run_results = all_run_results,
+  all_run_results = all_run_results_class,
   task_type = "classification",
   label_map = label_map
 )
 
 
+# ==============================================================================
+# PART B: TEXT REGRESSION EXAMPLE
+# ==============================================================================
+
+# --- 3B. Load and Prepare Regression Data ---
+# Create dummy data for regression (e.g., predicting a sentiment score from 0 to 1)
+n_samples_reg <- 500
+set.seed(11)
+regression_data <- data.frame(
+  text = replicate(n_samples_reg, paste(sample(letters, 40, replace = TRUE), collapse = "")),
+  score = runif(n_samples_reg, 0, 1) # Continuous label
+)
+
+# --- 4B. Set Model and Training Parameters ---
+MODEL_NAME_REG <- "distilbert-base-uncased"
+OUTPUT_DIR_REG <- "./finetuneR-regression-results"
+
+# --- 5B. Run a Single Fine-Tuning Run ---
+data_prep_output_reg <- prepare_finetuning_data(
+  df = regression_data,
+  task_type = "regression",
+  label_col = "score",
+  model_name = MODEL_NAME_REG,
+  seed = 11
+)
+
+training_args_reg <- create_training_args(
+  output_dir = file.path(OUTPUT_DIR_REG, "run_1"),
+  num_train_epochs = 4,
+  per_device_train_batch_size = 32,
+  weight_decay = 0.01,
+  learning_rate = 3e-5,
+  task_type = "regression",
+  metric_for_best_model = "mse",
+  seed = 11
+)
+
+# Store the single run in a list to use the summary function
+regression_run_result <- list(
+  run_1 = finetune_model(
+    datasets = data_prep_output_reg,
+    task_type = "regression",
+    model_name = MODEL_NAME_REG,
+    training_args = training_args_reg
+  )
+)
+
+# --- 6B. Generate Regression Report ---
+summarize_run_results(
+  all_run_results = regression_run_result,
+  task_type = "regression"
+)

@@ -262,7 +262,7 @@ create_training_args <- function(output_dir,
     per_device_eval_batch_size = as.integer(per_device_eval_batch_size),
     warmup_steps = as.integer(warmup_steps),
     weight_decay = weight_decay,
-    evaluation_strategy = eval_strategy,
+    eval_strategy = eval_strategy,
     save_strategy = eval_strategy, # Tie save strategy to evaluation strategy
     load_best_model_at_end = TRUE,
     metric_for_best_model = metric_for_best_model,
