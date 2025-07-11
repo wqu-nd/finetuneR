@@ -322,10 +322,17 @@ finetune_model <- function(datasets,
       preds <- py_to_r(logits)[, 1]
       labs <- as.numeric(py_to_r(labels))
 
+      # Check for zero variance in predictions before calculating correlation
+      if (stats::sd(preds) == 0) {
+        pearson_r <- NA_real_
+      } else {
+        pearson_r <- .globals$np$corrcoef(labs, preds)[0, 1]
+      }
+
       list(
         mae = .globals$sklearn$mean_absolute_error(labs, preds),
         mse = .globals$sklearn$mean_squared_error(labs, preds),
-        pearson_r = .globals$np$corrcoef(labs, preds)[0, 1]
+        pearson_r = pearson_r
       )
     }
   }
@@ -375,12 +382,23 @@ evaluate_predictions <- function(prediction_output, task_type = "classification"
     y_pred <- .globals$np$argmax(prediction_output$predictions, axis = -1L)
     .globals$sklearn$classification_report(y_true, y_pred, output_dict = TRUE, zero_division = 0)
   } else { # Regression
-    y_pred <- prediction_output$predictions[, 1]
+    y_pred <- py_to_r(prediction_output$predictions)[, 1]
+
+    pearson_r <- tryCatch({
+      if (stats::sd(y_pred) < 1e-9 || stats::sd(y_true) < 1e-9) {
+        return(NA_real_)
+      }
+      val <- .globals$np$corrcoef(y_true, y_pred)[0, 1]
+      if (is.numeric(val) && length(val) == 1 && !is.nan(val)) val else NA_real_
+    }, error = function(e) {
+      NA_real_
+    })
+
     list(
       mae = .globals$sklearn$mean_absolute_error(y_true, y_pred),
       mse = .globals$sklearn$mean_squared_error(y_true, y_pred),
       rmse = sqrt(.globals$sklearn$mean_squared_error(y_true, y_pred)),
-      pearson_r = .globals$np$corrcoef(y_true, y_pred)[0, 1]
+      pearson_r = pearson_r
     )
   }
 }
@@ -412,21 +430,31 @@ format_log_history <- function(log_history) {
     if ("eval_loss" %in% names(log)) {
       # This is a validation log, add the last training loss to it
       log$training_loss <- current_train_loss
-      processed_logs <- append(processed_logs, list(log))
+
+      # Sanitize the log by replacing any NULLs with NA before appending
+      sanitized_log <- lapply(log, function(x) {
+        if (is.null(x) || length(x) == 0) {
+          NA_real_
+        } else {
+          x
+        }
+      })
+
+      processed_logs <- append(processed_logs, list(sanitized_log))
     }
   }
 
   if (length(processed_logs) == 0) return(data.frame())
 
-  # Convert the processed list of validation logs to a data frame
+  # Now this call is safe because all lists have elements of length 1
   map_df(processed_logs, ~ as.data.frame(.x)) %>%
     rename_with(~gsub("eval_", "validation_", .x)) %>%
     select(
       any_of(c("epoch", "step", "training_loss", "validation_loss",
-               "validation_precision", "validation_recall", "validation_f1"))
+               "validation_precision", "validation_recall", "validation_f1",
+               "validation_mae", "validation_mse", "validation_pearson_r"))
     )
 }
-
 
 # ==============================================================================
 # 4. REPORTING
@@ -447,110 +475,110 @@ format_log_history <- function(log_history) {
 #' @export
 summarize_run_results <- function(all_run_results, task_type = "classification", label_map = NULL) {
 
-  check_env_initialized()
-  final_reports <- list()
+    check_env_initialized()
+    final_reports <- list()
 
-  cat("\n\n===== COMPREHENSIVE RESULTS REPORT =====\n")
+    cat("\n\n===== COMPREHENSIVE RESULTS REPORT =====\n")
 
-  for (i in seq_along(all_run_results)) {
-    run_name <- names(all_run_results)[i]
-    run_result <- all_run_results[[i]]
+    for (i in seq_along(all_run_results)) {
+      run_name <- names(all_run_results)[i]
+      run_result <- all_run_results[[i]]
 
-    cat(paste0("\n--- Results for ", run_name, " ---\n"))
+      cat(paste0("\n--- Results for ", run_name, " ---\n"))
 
-    # a. Training History
-    history <- format_log_history(run_result$trainer$state$log_history)
-    cat("Training History:\n")
-    print(history, width = 120)
+      # a. Training History
+      history <- format_log_history(run_result$trainer$state$log_history)
+      cat("Training History:\n")
+      print(history, width = 120)
 
-    # b. Runtime
-    full_history <- py_to_r(run_result$trainer$state$log_history)
-    runtime_secs <- full_history[[length(full_history)]]$train_runtime
-    cat(paste("\nRuntime:", round(runtime_secs / 60, 2), "minutes\n"))
+      # b. Runtime
+      full_history <- py_to_r(run_result$trainer$state$log_history)
+      runtime_secs <- full_history[[length(full_history)]]$train_runtime
+      cat(paste("\nRuntime:", round(runtime_secs / 60, 2), "minutes\n"))
 
-    # c. Test Set Evaluation
-    test_report <- evaluate_predictions(
-      prediction_output = run_result$prediction_output,
-      task_type = task_type
-    )
-    cat("Test Set Evaluation:\n")
-    if (task_type == "classification") {
-      # Separate per-class metrics from the summary metrics to avoid format issues
-      class_keys <- names(test_report)[!names(test_report) %in% c("accuracy", "macro avg", "weighted avg")]
-
-      # Robustly build the data frame, handling NULLs
-      report_rows <- list()
-      for(class_name in class_keys) {
-        metrics <- test_report[[class_name]]
-        # Sanitize each metric in the list, replacing NULL with NA
-        sanitized_metrics <- lapply(metrics, function(val) if(is.null(val)) NA else val)
-        report_rows[[class_name]] <- as.data.frame(sanitized_metrics)
-      }
-      report_df <- bind_rows(report_rows, .id = "class") %>%
-        rename(f1_score = `f1.score`) # fix name for R
-
-      if (!is.null(label_map)) {
-        # Add human-readable names if map is provided
-        report_df <- report_df %>%
-          mutate(class = as.integer(class)) %>%
-          left_join(label_map, by = c("class" = "label")) %>%
-          select(category, class, precision, recall, f1_score, support)
-      }
-
-      print(report_df)
-
-      cat("\nSummary Metrics:\n")
-      print(data.frame(test_report$`weighted avg`))
-
-      final_reports[[run_name]] <- list(
-        test_metrics = test_report,
-        runtime_secs = runtime_secs
+      # c. Test Set Evaluation
+      test_report <- evaluate_predictions(
+        prediction_output = run_result$prediction_output,
+        task_type = task_type
       )
-    } else {
-      print(as.data.frame(test_report))
-      final_reports[[run_name]] <- list(
-        test_metrics = test_report,
-        runtime_secs = runtime_secs
-      )
+      cat("Test Set Evaluation:\n")
+      if (task_type == "classification") {
+        # Separate per-class metrics from the summary metrics to avoid format issues
+        class_keys <- names(test_report)[!names(test_report) %in% c("accuracy", "macro avg", "weighted avg")]
+
+        # Robustly build the data frame, handling NULLs
+        report_rows <- list()
+        for(class_name in class_keys) {
+          metrics <- test_report[[class_name]]
+          # Sanitize each metric in the list, replacing NULL with NA
+          sanitized_metrics <- lapply(metrics, function(val) if(is.null(val)) NA else val)
+          report_rows[[class_name]] <- as.data.frame(sanitized_metrics)
+        }
+        report_df <- bind_rows(report_rows, .id = "class") %>%
+          rename(f1_score = `f1.score`) # fix name for R
+
+        if (!is.null(label_map)) {
+          # Add human-readable names if map is provided
+          report_df <- report_df %>%
+            mutate(class = as.integer(class)) %>%
+            left_join(label_map, by = c("class" = "label")) %>%
+            select(category, class, precision, recall, f1_score, support)
+        }
+
+        print(report_df)
+
+        cat("\nSummary Metrics:\n")
+        print(data.frame(test_report$`weighted avg`))
+
+        final_reports[[run_name]] <- list(
+          test_metrics = test_report,
+          runtime_secs = runtime_secs
+        )
+      } else {
+        print(as.data.frame(test_report))
+        final_reports[[run_name]] <- list(
+          test_metrics = test_report,
+          runtime_secs = runtime_secs
+        )
+      }
     }
-  }
 
-  # --- Aggregate and Print Final Summary Table ---
-  cat("\n\n===== FINAL AGGREGATED SUMMARY =====\n")
+    # --- Aggregate and Print Final Summary Table ---
+    cat("\n\n===== FINAL AGGREGATED SUMMARY =====\n")
 
-  if (task_type == "classification") {
-    summary_data <- purrr::map_df(final_reports, ~ {
-      # Use [[...]] to access names with hyphens
-      data.frame(
-        precision = .x$test_metrics$`weighted avg`$precision,
-        recall = .x$test_metrics$`weighted avg`$recall,
-        f1.score = .x$test_metrics$`weighted avg`$`f1-score`
-      )
-    })
+    if (task_type == "classification") {
+      summary_data <- purrr::map_df(final_reports, ~ {
+        # Use [[...]] to access names with hyphens
+        data.frame(
+          precision = .x$test_metrics$`weighted avg`$precision,
+          recall = .x$test_metrics$`weighted avg`$recall,
+          f1.score = .x$test_metrics$`weighted avg`$`f1-score`
+        )
+      })
 
-    final_summary <- summary_data %>%
-      summarise(
-        mean_precision = mean(precision), sd_precision = sd(precision),
-        mean_recall = mean(recall), sd_recall = sd(recall),
-        mean_f1 = mean(f1.score), sd_f1 = sd(f1.score)
-      )
-  } else { # Regression
-    summary_data <- purrr::map_df(final_reports, ~ as.data.frame(.x$test_metrics))
-    final_summary <- summary_data %>%
-      summarise(
-        mean_mae = mean(mae), sd_mae = sd(mae),
-        mean_mse = mean(mse), sd_mse = sd(mse),
-        mean_rmse = mean(rmse), sd_rmse = sd(rmse),
-        mean_pearson_r = mean(pearson_r), sd_pearson_r = sd(pearson_r)
-      )
-  }
+      final_summary <- summary_data %>%
+        summarise(
+          mean_precision = mean(precision), sd_precision = sd(precision),
+          mean_recall = mean(recall), sd_recall = sd(recall),
+          mean_f1 = mean(f1.score), sd_f1 = sd(f1.score)
+        )
+    } else { # Regression
+      summary_data <- purrr::map_df(final_reports, ~ as.data.frame(.x$test_metrics))
+      final_summary <- summary_data %>%
+        summarise(
+          mean_mae = mean(mae), sd_mae = sd(mae),
+          mean_mse = mean(mse), sd_mse = sd(mse),
+          mean_rmse = mean(rmse), sd_rmse = sd(rmse),
+          mean_pearson_r = mean(pearson_r), sd_pearson_r = sd(pearson_r)
+        )
+    }
 
-  # Add timing summary
-  runtimes <- purrr::map_dbl(final_reports, "runtime_secs")
-  final_summary$mean_runtime_mins <- mean(runtimes) / 60
-  final_summary$total_runtime_mins <- sum(runtimes) / 60
+    # Add timing summary
+    runtimes <- purrr::map_dbl(final_reports, "runtime_secs")
+    final_summary$mean_runtime_mins <- mean(runtimes) / 60
+    final_summary$total_runtime_mins <- sum(runtimes) / 60
 
-  print(final_summary)
+    print(final_summary)
 
-  invisible(final_summary)
+    invisible(final_summary)
 }

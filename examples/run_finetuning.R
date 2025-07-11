@@ -5,6 +5,7 @@
 # classification task and a regression task.
 
 # --- 1. Load Package and Dependencies ---
+devtools::install_github("wqu-nd/finetuneR")
 library(finetuneR)
 library(dplyr)
 library(reticulate)
@@ -50,7 +51,7 @@ OUTPUT_DIR_CLASS <- "./finetuneR-classification-results"
 
 # --- 5A. Run Training with Multiple Seeds ---
 all_run_results_class <- list()
-n_runs <- 3
+n_runs <- 2
 
 for (i in 1:n_runs) {
   run_seed <- 11 * i
@@ -64,17 +65,20 @@ for (i in 1:n_runs) {
   )
 
   training_args <- create_training_args(
-    output_dir = file.path(OUTPUT_DIR_CLASS, paste0("run_", i)),
-    num_train_epochs = 10,
-    per_device_train_batch_size = 32,
-    per_device_eval_batch_size = 64,
-    weight_decay = 0.01,
-    learning_rate = 1e-5,
-    seed = run_seed
+    output_dir = file.path(OUTPUT_DIR, paste0("run_", i)),
+    num_train_epochs = 2,
+    per_device_train_batch_size = 64,
+    per_device_eval_batch_size = 128,
+    learning_rate = 2e-5,
+    warmup_steps=0,
+    weight_decay=0.05,
+    task_type = "classification",
+    metric_for_best_model = "precision",
+    seed = 11
   )
 
   all_run_results_class[[paste0("run_", i)]] <- finetune_model(
-    datasets = data_prep_output,
+    datasets = data_preparation_output$datasets,
     task_type = "classification",
     model_name = MODEL_NAME_CLASS,
     training_args = training_args,
@@ -97,6 +101,8 @@ summarize_run_results(
 
 # --- 3B. Load and Prepare Regression Data ---
 # Create dummy data for regression (e.g., predicting a sentiment score from 0 to 1)
+# In this example, the Pearson's r is expected to be NA,and all the expected value are around 0.5.
+# Please your own data for meaningful reason.
 n_samples_reg <- 500
 set.seed(11)
 regression_data <- data.frame(
@@ -121,6 +127,7 @@ training_args_reg <- create_training_args(
   output_dir = file.path(OUTPUT_DIR_REG, "run_1"),
   num_train_epochs = 4,
   per_device_train_batch_size = 32,
+  per_device_eval_batch_size = 64,
   weight_decay = 0.01,
   learning_rate = 3e-5,
   task_type = "regression",
@@ -131,7 +138,7 @@ training_args_reg <- create_training_args(
 # Store the single run in a list to use the summary function
 regression_run_result <- list(
   run_1 = finetune_model(
-    datasets = data_prep_output_reg,
+    datasets = data_prep_output_reg$datasets,
     task_type = "regression",
     model_name = MODEL_NAME_REG,
     training_args = training_args_reg
@@ -139,7 +146,10 @@ regression_run_result <- list(
 )
 
 # --- 6B. Generate Regression Report ---
+# Because this is a single-run example, the standard deviations are expected to be 0.
+# See the previous classification example for the multiple-run setting.
 summarize_run_results(
   all_run_results = regression_run_result,
   task_type = "regression"
 )
+
