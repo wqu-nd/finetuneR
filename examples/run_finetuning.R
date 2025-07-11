@@ -51,7 +51,7 @@ OUTPUT_DIR_CLASS <- "./finetuneR-classification-results"
 
 # --- 5A. Run Training with Multiple Seeds ---
 all_run_results_class <- list()
-n_runs <- 2
+n_runs <- 5
 
 for (i in 1:n_runs) {
   run_seed <- 11 * i
@@ -66,7 +66,7 @@ for (i in 1:n_runs) {
 
   training_args <- create_training_args(
     output_dir = file.path(OUTPUT_DIR, paste0("run_", i)),
-    num_train_epochs = 2,
+    num_train_epochs = 10,
     per_device_train_batch_size = 64,
     per_device_eval_batch_size = 128,
     learning_rate = 2e-5,

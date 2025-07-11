@@ -12,7 +12,7 @@ finetuneR provides a streamlined, high-level workflow for fine-tuning pre-traine
 
 **User-Friendly Wrappers:** Core functions abstract away the complexities of the underlying Python libraries.
 
-**Comprehensive Reporting:** Generate detailed reports from multiple training runs, including training history, per-class metrics, and an aggregated summary with mean and standard deviation. 
+**Comprehensive Reporting:** Generate detailed reports from multiple training runs, including training history, per-class metrics, and an aggregated summary with mean and standard deviation.
 
 ## Installation
 
@@ -28,7 +28,9 @@ devtools::install_github("wqu-nd/finetuneR")
 
 ## Example
 
-Here is a complete workflow for fine-tuning a text classification model over multiple runs. You can also use the run_finetuning.R file for the classification example.
+Here is a complete workflow for fine-tuning a text classification model over multiple runs.
+
+You can also use the **run_finetuning.R** file for both the *classification and regression examples*.
 
 ### 1. Load Libraries
 
@@ -67,26 +69,29 @@ setup_finetuner_env(global_seed = 123)
 
 Load your data into a data frame. It must contain a column for your text data and a column for your labels (numeric for both classification and regression).
 
-For this example, we will create a dummy dataset for a 15-class classification problem.
-
 ``` r
 # Define the mapping from category names to numeric labels
 label_map <- data.frame(
   category = c(
-    "Monitoring environmental impact", "Preventing pollution", "Strengthening ecosystems",
-    "Reducing use", "Reusing", "Recycling", "Repurposing", 
-    "Encouraging and supporting others", "Educating and training for sustainability",
-    "Creating sustainable products and processes", "Embracing innovation for sustainability",
-    "Changing how work is done", "Choosing responsible alternatives",
-    "Instituting programs and policies", "Others"
+    "Monitoring environmental impact", "Preventing pollution",
+    "Strengthening ecosystems", "Reducing use", "Reusing", "Recycling",
+    "Repurposing", "Encouraging and supporting others",
+    "Educating and training for sustainability",
+    "Creating sustainable products and processes",
+    "Embracing innovation for sustainability", "Changing how work is done",
+    "Choosing responsible alternatives", "Instituting programs and policies",
+    "Others"
   ),
   label = 0:14
 )
 
-# Create some dummy data
+# Create dummy data that mimics the structure of the original dataset
+n_samples_class <- 1000
+
+set.seed(11)
 my_data <- data.frame(
-  text = replicate(1000, paste(sample(letters, 50, replace = TRUE), collapse = "")),
-  category = sample(label_map$category, 1000, replace = TRUE)
+  text = replicate(n_samples_class, paste(sample(letters, 50, replace = TRUE), collapse = "")),
+  category = sample(label_map$category, n_samples_class, replace = TRUE)
 ) %>%
   left_join(label_map, by = "category")
 ```
@@ -101,33 +106,36 @@ NUM_LABELS <- n_distinct(my_data$label)
 OUTPUT_DIR <- "./finetuneR-results"
 
 all_run_results <- list()
-n_runs <- 3
+n_runs <- 5
 
 for (i in 1:n_runs) {
-  run_seed <- 42 * i
-  cat(paste0("\nExecuting Run ", i, "/", n_runs, " (Seed: ", run_seed, ")..."))
-  
-  # Prepare datasets with a specific seed for this run's splits
-  datasets <- prepare_finetuning_data(
+  run_seed <- 11 * i
+  cat(paste0("\nExecuting Classification Run ", i, "/", n_runs, " (Seed: ", run_seed, ")..."))
+
+  data_prep_output <- prepare_finetuning_data(
     df = my_data,
     task_type = "classification",
-    model_name = MODEL_NAME,
+    model_name = MODEL_NAME_CLASS,
     seed = run_seed
   )
-  
-  # Create training arguments
+
   training_args <- create_training_args(
     output_dir = file.path(OUTPUT_DIR, paste0("run_", i)),
-    num_train_epochs = 3,
-    per_device_train_batch_size = 32,
-    seed = run_seed
-  )
-  
-  # Run the fine-tuning process and store the results
-  all_run_results[[paste0("run_", i)]] <- finetune_model(
-    datasets = datasets,
+    num_train_epochs = 10,
+    per_device_train_batch_size = 64,
+    per_device_eval_batch_size = 128,
+    learning_rate = 2e-5,
+    warmup_steps=0,
+    weight_decay=0.05,
     task_type = "classification",
-    model_name = MODEL_NAME,
+    metric_for_best_model = "precision",
+    seed = 11
+  )
+
+  all_run_results_class[[paste0("run_", i)]] <- finetune_model(
+    datasets = data_preparation_output$datasets,
+    task_type = "classification",
+    model_name = MODEL_NAME_CLASS,
     training_args = training_args,
     num_labels = NUM_LABELS
   )
