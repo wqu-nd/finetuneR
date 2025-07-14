@@ -218,10 +218,10 @@ prepare_finetuning_data <- function(df,
 #' @param per_device_train_batch_size The batch size for training.
 #' @param per_device_eval_batch_size The batch size for validation.
 #' @param warmup_steps Number of steps for the learning rate warmup. Defaults to 0.
-#' @param weight_decay The weight decay to apply (if not zero). Defaults to 0.
+#' @param weight_decay The weight decay to apply (if not zero). Defaults to 0.01.
 #' @param metric_for_best_model The metric used to identify the best model.
 #'   Defaults to "f1" for classification and "mse" for regression.
-#' @param eval_strategy The evaluation and save strategy to adopt during training.
+#' @param evaluation_strategy The evaluation and save strategy to adopt during training.
 #'   Possible values are `"no"`, `"steps"`, `"epoch"`. Defaults to `"epoch"`.
 #' @param logging_strategy The logging strategy to adopt during training.
 #'   Possible values are `"no"`, `"steps"`, `"epoch"`. Defaults to `"epoch"`.
@@ -233,14 +233,14 @@ prepare_finetuning_data <- function(df,
 #' @return A `TrainingArguments` object.
 #' @export
 create_training_args <- function(output_dir,
-                                 num_train_epochs = 3L,
+                                 num_train_epochs = 10L,
                                  learning_rate = 2e-5,
                                  per_device_train_batch_size = 16L,
                                  per_device_eval_batch_size = 32L,
                                  warmup_steps = 0L,
                                  weight_decay = 0.01,
                                  metric_for_best_model = NULL,
-                                 eval_strategy = "epoch",
+                                 evaluation_strategy = "epoch",
                                  logging_strategy = "epoch",
                                  show_progress_bar = TRUE,
                                  task_type = "classification",
@@ -253,24 +253,39 @@ create_training_args <- function(output_dir,
     metric_for_best_model <- ifelse(task_type == "classification", "f1", "mse")
   }
 
-  # Pass arguments directly, mapping user-friendly names to Python library's names
-  .globals$transformers$TrainingArguments(
-    output_dir = output_dir,
-    num_train_epochs = as.integer(num_train_epochs),
-    learning_rate = learning_rate,
-    per_device_train_batch_size = as.integer(per_device_train_batch_size),
-    per_device_eval_batch_size = as.integer(per_device_eval_batch_size),
-    warmup_steps = as.integer(warmup_steps),
-    weight_decay = weight_decay,
-    eval_strategy = eval_strategy,
-    save_strategy = eval_strategy, # Tie save strategy to evaluation strategy
-    load_best_model_at_end = TRUE,
-    metric_for_best_model = metric_for_best_model,
-    logging_strategy = logging_strategy,
-    disable_tqdm = !show_progress_bar,
-    seed = as.integer(seed),
-    ...
-  )
+  # Use tryCatch to provide a helpful error message for version conflicts
+  tryCatch({
+    .globals$transformers$TrainingArguments(
+      output_dir = output_dir,
+      num_train_epochs = as.integer(num_train_epochs),
+      learning_rate = learning_rate,
+      per_device_train_batch_size = as.integer(per_device_train_batch_size),
+      per_device_eval_batch_size = as.integer(per_device_eval_batch_size),
+      warmup_steps = as.integer(warmup_steps),
+      weight_decay = weight_decay,
+      evaluation_strategy = evaluation_strategy,
+      save_strategy = evaluation_strategy, # Tie save strategy to evaluation
+      load_best_model_at_end = TRUE,
+      metric_for_best_model = metric_for_best_model,
+      logging_strategy = logging_strategy,
+      disable_tqdm = !show_progress_bar,
+      seed = as.integer(seed),
+      ...
+    )
+  }, error = function(e) {
+    if (grepl("unused argument", e$message)) {
+      stop(
+        "An argument was not recognized by the Python 'TrainingArguments' function.\n",
+        "This is often caused by an outdated version of the 'transformers' library.\n",
+        "Please try updating your Python libraries by running the following command in your R console:\n",
+        "  `reticulate::py_install(c('transformers', 'datasets', 'accelerate'), pip = TRUE, pip_options = '--upgrade')`\n\n",
+        "Original error: ", e$message,
+        call. = FALSE
+      )
+    } else {
+      stop(e) # Re-throw any other errors
+    }
+  })
 }
 
 
