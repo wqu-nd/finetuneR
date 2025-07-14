@@ -6,14 +6,14 @@
 \usage{
 create_training_args(
   output_dir,
-  num_train_epochs = 3L,
+  num_train_epochs = 10L,
   learning_rate = 2e-05,
   per_device_train_batch_size = 16L,
   per_device_eval_batch_size = 32L,
   warmup_steps = 0L,
   weight_decay = 0.01,
   metric_for_best_model = NULL,
-  eval_strategy = "epoch",
+  evaluation_strategy = "epoch",
   logging_strategy = "epoch",
   show_progress_bar = TRUE,
   task_type = "classification",
@@ -34,12 +34,12 @@ create_training_args(
 
 \item{warmup_steps}{Number of steps for the learning rate warmup. Defaults to 0.}
 
-\item{weight_decay}{The weight decay to apply (if not zero). Defaults to 0.}
+\item{weight_decay}{The weight decay to apply (if not zero). Defaults to 0.01.}
 
 \item{metric_for_best_model}{The metric used to identify the best model.
 Defaults to "f1" for classification and "mse" for regression.}
 
-\item{eval_strategy}{The evaluation and save strategy to adopt during training.
+\item{evaluation_strategy}{The evaluation and save strategy to adopt during training.
 Possible values are `"no"`, `"steps"`, `"epoch"`. Defaults to `"epoch"`.}
 
 \item{logging_strategy}{The logging strategy to adopt during training.
